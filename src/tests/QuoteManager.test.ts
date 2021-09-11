@@ -1,12 +1,18 @@
 import * as DateFns from 'date-fns';
-import { PerformanceObserver, performance } from 'perf_hooks';
+import {
+    PerformanceObserver,
+    performance,
+    PerformanceEntry,
+} from 'perf_hooks';
 
 import {
+    Double,
     double,
     Guid,
     newGuid,
     Quote,
     tradingSymbol,
+    UInt,
     uint,
 } from 'src/base';
 import type { QuoteCache } from 'src/QuoteCache';
@@ -161,40 +167,52 @@ describe('AddOrUpdateQuote', () => {
 
     it('should only add one', () => {
         const qm = seedQuoteManager([]);
-        expect(Array.from(getCache(qm).getQuotes()).length).toBe(0);
+        expect(getCache(qm).getQuotes().length).toBe(0);
         qm.AddOrUpdateQuote(quote({
             AvailableVolume: 1,
             ExpirationDate: DateFns.subDays(new Date(), 1),
             Price: 1,
             Symbol: 'FOO',
         }));
-        expect(Array.from(getCache(qm).getQuotes()).length).toBe(1);
+        expect(getCache(qm).getQuotes().length).toBe(1);
     });
+
+    it('should update existing', () => {
+        const a = quote({
+            AvailableVolume: 1,
+            ExpirationDate: DateFns.addDays(new Date(), 1),
+            Price: 1,
+            Symbol: 'FOO',
+        });
+        const qm = seedQuoteManager([a]);
+        qm.AddOrUpdateQuote({ ...a, Price: double(5) });
+        expect(qm.GetBestQuoteWithAvailableVolume(a.Symbol)?.Price).toBe(5);
+    })
 
     it('should remove all by symbol', () => {
         const qm = seedQuoteManager([
             quote({
                 AvailableVolume: 1,
-                ExpirationDate: DateFns.subDays(new Date(), 1),
+                ExpirationDate: DateFns.addDays(new Date(), 1),
                 Price: 1,
                 Symbol: 'A',
             }),
             quote({
                 AvailableVolume: 1,
-                ExpirationDate: DateFns.subDays(new Date(), 1),
+                ExpirationDate: DateFns.addDays(new Date(), 1),
                 Price: 1,
                 Symbol: 'A',
             }),
             quote({
                 AvailableVolume: 1,
-                ExpirationDate: DateFns.subDays(new Date(), 1),
+                ExpirationDate: DateFns.addDays(new Date(), 1),
                 Price: 1,
                 Symbol: 'B',
             })
         ]);
-        expect(Array.from(getCache(qm).getQuotes()).length).toBe(3);
+        expect(getCache(qm).getQuotes().length).toBe(3);
         qm.RemoveAllQuotes(tradingSymbol('A'));
-        expect(Array.from(getCache(qm).getQuotes()).length).toBe(1);
+        expect(getCache(qm).getQuotes().length).toBe(1);
     });
 
     it('should remove one by id', () => {
@@ -213,9 +231,9 @@ describe('AddOrUpdateQuote', () => {
             })
         ];
         const qm = seedQuoteManager(quotes);
-        expect(Array.from(getCache(qm).getQuotes()).length).toBe(2);
+        expect(getCache(qm).getQuotes().length).toBe(2);
         qm.RemoveQuote(quotes[0].Id);
-        expect(Array.from(getCache(qm).getQuotes()).length).toBe(1);
+        expect(getCache(qm).getQuotes().length).toBe(1);
     });
 
     it('should get best quote by symbol', () => {
@@ -254,23 +272,44 @@ describe('AddOrUpdateQuote', () => {
 });
 
 describe('benchmark', () => {
-    it('should not take forever on 100k quotes', done => {
+    it('should not take forever on 10k quotes', done => {
         const symbol = tradingSymbol('FOO');
-        const qm = seedQuoteManager(Array.from({ length: 100000   }).map((_, ix) => quote({
-            AvailableVolume: ix,
-            ExpirationDate: DateFns.addDays(new Date(), ix),
-            Price: ix,
-            Symbol: symbol,
-        })));
+        const markSeenMap = {
+            A: false,
+            B: false,
+        };
+        const markExpectMap = {
+            A(entry: PerformanceEntry) { markSeenMap.A = true; expect(entry.duration).toBeLessThan(2000) },
+            B(entry: PerformanceEntry) { markSeenMap.B = true; expect(entry.duration).toBeLessThan(2000) },
+        }
         const obs = new PerformanceObserver((items) => {
-            const duration = items.getEntries()[0].duration;
-            expect(duration).toBeLessThan(2000);
-            performance.clearMarks();
-            done();
+            for (const entry of items.getEntries()) {
+                console.log(entry.name, entry.duration);
+                if (!Object.keys(markExpectMap).includes(entry.name)) {
+                    continue;
+                }
+                markExpectMap[entry.name as keyof typeof markExpectMap](entry);
+            }
+            if (Object.values(markSeenMap).every(x => x)) {
+                done();
+            }
         });
         obs.observe({ entryTypes: ['measure'] });
         performance.mark('A');
-        qm.ExecuteTrade(symbol, uint(Number.MAX_SAFE_INTEGER));
-        performance.measure('A to Now', 'A');
+        const qm = new QuoteManager();
+        const SIZE = 10_000;
+        for (let ix = 0; ix < SIZE; ix++) {
+            qm.AddOrUpdateQuote(new Quote({
+                Id: newGuid(),
+                AvailableVolume: ix as UInt,
+                ExpirationDate: DateFns.addDays(new Date(), 1),
+                Price: ix as Double,
+                Symbol: symbol,
+            }));
+        }
+        performance.measure('A', 'A');
+        performance.mark('B');
+        qm.ExecuteTrade(symbol, uint(100));
+        performance.measure('B', 'B');
     })
 })

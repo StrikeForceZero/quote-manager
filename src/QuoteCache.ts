@@ -4,30 +4,61 @@ import type {
     TradingSymbol,
 } from 'src/base';
 
+type SymbolPosObj = { symbol: TradingSymbol, pos: number };
+
 export class QuoteCache {
-    private readonly quotesByGuid = new Map<Guid, IQuote>();
-    private readonly quotesBySymbol = new Map<TradingSymbol, Map<Guid, IQuote>>();
+    private readonly quoteSymbolPosMap = new Map<Guid, SymbolPosObj>();
+    private readonly quotesBySymbol = new Map<TradingSymbol, IQuote[]>();
 
-    private getOrInitializeNestedMap(symbol: TradingSymbol): Map<Guid, IQuote> {
-        let nestedMap: Map<Guid, IQuote> | undefined = this.quotesBySymbol.get(symbol);
-        if (!nestedMap) {
-            nestedMap = new Map<Guid, IQuote>();
-            this.quotesBySymbol.set(symbol, nestedMap);
+    private getOrInitializeQuoteArr(symbol: TradingSymbol): IQuote[] {
+        let quotes: IQuote[] | undefined = this.quotesBySymbol.get(symbol);
+        if (!quotes) {
+            quotes = [];
+            this.quotesBySymbol.set(symbol, quotes);
         }
-        return nestedMap;
+        return quotes;
     }
 
-    private static setMap(map: Map<Guid, IQuote>, quote: IQuote): void {
-        map.set(quote.Id, quote);
+    private getOrInitializeNestedQuotePosObj(quote: IQuote): SymbolPosObj {
+        let symbolPosObj: SymbolPosObj | undefined = this.quoteSymbolPosMap.get(quote.Id);
+        let quotesForSymbol = this.getOrInitializeQuoteArr(quote.Symbol);
+
+        if (!symbolPosObj) {
+            let newIndex = 0;
+            // sort by price lowest to highest
+            for (const [index, existingQuote] of quotesForSymbol.entries()) {
+                // using > maintains FIFO
+                if (existingQuote.Price > quote.Price) {
+                    break;
+                }
+                newIndex = index + 1;
+            }
+            // shift all existing index markers after newIndex by one
+            for (const [index, existingQuote] of quotesForSymbol.entries()) {
+                if (index < newIndex) {
+                    continue;
+                }
+                const existingQuoteSymbolPosObj = this.quoteSymbolPosMap.get(existingQuote.Id)
+                if (!existingQuoteSymbolPosObj) {
+                    throw new Error('impossible');
+                }
+                existingQuoteSymbolPosObj.pos = index + 1;
+            }
+            quotesForSymbol.splice(newIndex, 0, quote);
+            symbolPosObj = {
+                symbol: quote.Symbol,
+                pos: newIndex,
+            };
+            this.quoteSymbolPosMap.set(quote.Id, symbolPosObj);
+        }
+        // used for updating existing quotes
+        quotesForSymbol[symbolPosObj.pos] = quote;
+        return symbolPosObj;
     }
 
-    private static deleteMap(map: Map<Guid, IQuote>, quote: IQuote): void {
-        map.delete(quote.Id);
-    }
 
     public addOrUpdateQuote(quote: IQuote): void {
-        QuoteCache.setMap(this.quotesByGuid, quote);
-        QuoteCache.setMap(this.getOrInitializeNestedMap(quote.Symbol), quote);
+        this.getOrInitializeNestedQuotePosObj(quote);
     }
 
     public removeQuotesBySymbol(symbol: TradingSymbol): void {
@@ -36,38 +67,58 @@ export class QuoteCache {
             return;
         }
         for (const quote of nestedMap.values()) {
-            this.quotesByGuid.delete(quote.Id);
+            this.quoteSymbolPosMap.delete(quote.Id);
         }
-        nestedMap.clear();
+        this.quotesBySymbol.delete(symbol);
     }
 
     public removeQuote(quote: IQuote): void {
-        QuoteCache.deleteMap(this.quotesByGuid, quote);
-        const nestedMap = this.getOrInitializeNestedMap(quote.Symbol);
-        QuoteCache.deleteMap(nestedMap, quote);
+        const symbolPosObj = this.quoteSymbolPosMap.get(quote.Id);
+        if (!symbolPosObj) {
+            return;
+        }
+        const quotes = this.quotesBySymbol.get(quote.Symbol);
+        if (!quotes) {
+            return;
+        }
+        quotes.splice(symbolPosObj.pos, 1);
+        for (const [index, quote] of quotes.entries()) {
+            if (index < symbolPosObj.pos) {
+                continue;
+            }
+
+            {
+                const symbolPosObj = this.quoteSymbolPosMap.get(quote.Id);
+                if (!symbolPosObj) {
+                    throw new Error('impossible')
+                }
+                symbolPosObj.pos = index;
+            }
+        }
         // cleanup
-        if (!nestedMap.size) {
+        if (!quotes.length) {
             this.quotesBySymbol.delete(quote.Symbol);
         }
     }
 
     public removeQuoteById(id: Guid): void {
-        const quote = this.quotesByGuid.get(id);
-        if (!quote) {
+        const symbolPosObj = this.quoteSymbolPosMap.get(id);
+        if (!symbolPosObj) {
             return;
+        }
+        const quotes = this.quotesBySymbol.get(symbolPosObj.symbol) ?? [];
+        const quote = quotes[symbolPosObj.pos];
+        if (!quote) {
+            throw new Error('impossible');
         }
         this.removeQuote(quote);
     }
 
-    public getQuotes(): IterableIterator<IQuote> {
-        return this.quotesByGuid.values();
+    public getQuotes(): IQuote[] {
+        return Array.from(this.quotesBySymbol.values()).flat();
     }
 
-    public getQuotesBySymbol(symbol: TradingSymbol): IterableIterator<IQuote> | [] {
-        const nestedMap = this.quotesBySymbol.get(symbol);
-        if (!nestedMap) {
-            return [];
-        }
-        return nestedMap.values();
+    public getQuotesBySymbol(symbol: TradingSymbol): IQuote[] {
+        return this.quotesBySymbol.get(symbol) ?? [];
     }
 }
