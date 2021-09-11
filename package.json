@@ -1,0 +1,25 @@
+{
+  "name": "quote-manager",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@types/date-fns": "^2.6.0",
+    "@types/jest": "^27.0.1",
+    "@types/node": "^16.9.1",
+    "@types/uuid": "^8.3.1",
+    "date-fns": "^2.23.0",
+    "jest": "^27.1.1",
+    "ts-essentials": "^8.1.0",
+    "ts-jest": "^27.0.5",
+    "ts-node": "^10.2.1",
+    "tsconfig-paths": "^3.11.0",
+    "typescript": "^4.4.2",
+    "uuid": "^8.3.2"
+  }
+}
