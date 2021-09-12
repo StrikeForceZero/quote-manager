@@ -17,15 +17,15 @@ import {
 import { QuoteManager } from 'src/QuoteManager';
 
 describe('benchmark', () => {
-    it('should not take forever on 10k quotes', done => {
+    it('should not take forever on 100k quotes in order', done => {
         const symbol = tradingSymbol('FOO');
         const markSeenMap = {
             A: false,
             B: false,
         };
         const markExpectMap = {
-            A(entry: PerformanceEntry) { markSeenMap.A = true; expect(entry.duration).toBeLessThan(2000) },
-            B(entry: PerformanceEntry) { markSeenMap.B = true; expect(entry.duration).toBeLessThan(2000) },
+            A(entry: PerformanceEntry) { markSeenMap.A = true; expect(entry.duration).toBeLessThan(1000) },
+            B(entry: PerformanceEntry) { markSeenMap.B = true; expect(entry.duration).toBeLessThan(1) },
         }
         const obs = new PerformanceObserver((items) => {
             for (const entry of items.getEntries()) {
@@ -42,8 +42,8 @@ describe('benchmark', () => {
         obs.observe({ entryTypes: ['measure'] });
         performance.mark('A');
         const qm = new QuoteManager();
-        const SIZE = 10_000;
-        for (let ix = 0; ix < SIZE; ix++) {
+        let ix = 100_000;
+        while (--ix >= 0) {
             qm.AddOrUpdateQuote(new Quote({
                 Id: newGuid(),
                 AvailableVolume: ix as UInt,
