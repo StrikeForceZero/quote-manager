@@ -84,8 +84,9 @@ export class QuoteManager implements IQuoteManager {
     public ExecuteTrade(symbol: TradingSymbol, volumeRequested: UInt): ITradeResult {
         let volumePrices: Array<{ volume: UInt, price: Double }> = [];
         let volumeRequestedRemaining = volumeRequested;
-        const quotes = this.cache.getAllQuotesBySymbol(symbol);
-        for (const quote of iteratorReverse(quotes)) {
+        let quote: null | IQuote = null;
+        do {
+            quote = this.GetBestQuoteWithAvailableVolume(symbol);
             if (volumeRequestedRemaining <= 0) {
                 if (volumeRequestedRemaining < 0) {
                     throw new Error('whoops');
@@ -93,11 +94,7 @@ export class QuoteManager implements IQuoteManager {
                 break;
             }
             if (!quote) {
-                throw new Error('whoops');
-            }
-            if (QuoteUtil.isQuoteInvalid(quote)) {
-                this.cache.removeQuote(quote);
-                continue;
+                break;
             }
             const maxConsumableVolume = uint(quote.AvailableVolume < volumeRequestedRemaining ? quote.AvailableVolume : volumeRequestedRemaining);
             volumeRequestedRemaining = uint(volumeRequestedRemaining - maxConsumableVolume);
@@ -106,7 +103,7 @@ export class QuoteManager implements IQuoteManager {
                 this.cache.removeQuote(quote);
             }
             volumePrices.push({ volume: maxConsumableVolume, price: quote.Price });
-        }
+        } while (volumeRequestedRemaining > 0);
         const volumeExecuted = uint(volumeRequested - volumeRequestedRemaining);
         const volumeWeightedAveragePrice = volumePrices.reduce<number>((sum, { volume, price }) => {
             return sum + (volume * price)
