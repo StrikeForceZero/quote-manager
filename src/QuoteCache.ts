@@ -45,7 +45,14 @@ export class QuoteCache {
                 }
                 existingQuoteSymbolPosObj.pos = index + 1;
             }
-            quotesForSymbol.splice(newIndex, 0, quote);
+            // without directly benchmarking the performance from .splice(array.length, 0, quote) vs .push(quote)
+            // we will assume this gives us a small but exponential performance gain
+            // by splitting these paths into just pushing off the end versus splicing and reindexing the array
+            if (quotesForSymbol.length === newIndex) {
+                quotesForSymbol.push(quote);
+            } else {
+                quotesForSymbol.splice(newIndex, 0, quote);
+            }
             symbolPosObj = {
                 symbol: quote.Symbol,
                 pos: newIndex,
