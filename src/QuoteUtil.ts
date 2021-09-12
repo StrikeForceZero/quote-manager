@@ -6,6 +6,13 @@ export class QuoteUtil {
         return quote.ExpirationDate.getTime() <= Date.now();
     }
 
+    public static isQuoteInvalid(quote: IQuote): boolean {
+        if (quote.AvailableVolume < 0) {
+            throw new Error('whoops');
+        }
+        return QuoteUtil.isQuoteExpired(quote) || quote.AvailableVolume <= 0;
+    }
+
     public static compareQuoteVolume(quoteA: IQuote, quoteB: IQuote): -1 | 0 | 1  {
         if (quoteA.AvailableVolume < quoteB.AvailableVolume) {
             return -1;

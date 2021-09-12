@@ -160,14 +160,14 @@ describe('AddOrUpdateQuote', () => {
 
     it('should only add one', () => {
         const qm = seedQuoteManager([]);
-        expect(getCache(qm).getQuotes().length).toBe(0);
+        expect(getCache(qm).getAllQuotes().length).toBe(0);
         qm.AddOrUpdateQuote(quote({
             AvailableVolume: 1,
             ExpirationDate: DateFns.subDays(new Date(), 1),
             Price: 1,
             Symbol: 'FOO',
         }));
-        expect(getCache(qm).getQuotes().length).toBe(1);
+        expect(getCache(qm).getAllQuotes().length).toBe(1);
     });
 
     it('should update existing', () => {
@@ -203,9 +203,9 @@ describe('AddOrUpdateQuote', () => {
                 Symbol: 'B',
             })
         ]);
-        expect(getCache(qm).getQuotes().length).toBe(3);
+        expect(getCache(qm).getAllQuotes().length).toBe(3);
         qm.RemoveAllQuotes(tradingSymbol('A'));
-        expect(getCache(qm).getQuotes().length).toBe(1);
+        expect(getCache(qm).getAllQuotes().length).toBe(1);
     });
 
     it('should remove one by id', () => {
@@ -224,9 +224,9 @@ describe('AddOrUpdateQuote', () => {
             })
         ];
         const qm = seedQuoteManager(quotes);
-        expect(getCache(qm).getQuotes().length).toBe(2);
+        expect(getCache(qm).getAllQuotes().length).toBe(2);
         qm.RemoveQuote(quotes[0].Id);
-        expect(getCache(qm).getQuotes().length).toBe(1);
+        expect(getCache(qm).getAllQuotes().length).toBe(1);
     });
 
     it('should get best quote by symbol', () => {
@@ -248,6 +248,12 @@ describe('AddOrUpdateQuote', () => {
                 AvailableVolume: 1,
                 ExpirationDate: DateFns.addDays(new Date(), 1),
                 Price: 1,
+                Symbol: 'A',
+            }),
+            quote({
+                AvailableVolume: 0,
+                ExpirationDate: DateFns.addDays(new Date(), 1),
+                Price: 0.1,
                 Symbol: 'A',
             }),
         ];

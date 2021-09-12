@@ -14,6 +14,7 @@ import type {
 } from 'src/base';
 import { QuoteCache } from 'src/QuoteCache';
 import { QuoteUtil } from 'src/QuoteUtil';
+import { iteratorReverse } from 'src/util';
 
 
 export class QuoteManager implements IQuoteManager {
@@ -52,8 +53,10 @@ export class QuoteManager implements IQuoteManager {
      * @param symbol
      */
     public GetBestQuoteWithAvailableVolume(symbol: TradingSymbol): IQuote | null {
-        for (const quote of this.cache.getQuotesBySymbol(symbol)) {
-            if (!quote.AvailableVolume || QuoteUtil.isQuoteExpired(quote)) {
+        for (const quote of iteratorReverse(this.cache.getAllQuotesBySymbol(symbol))) {
+            if (QuoteUtil.isQuoteInvalid(quote)) {
+                // TODO: the instructions didn't explicitly say if we could or could not remove the invalid quote
+                this.cache.removeQuote(quote);
                 continue;
             }
             return quote;
@@ -81,39 +84,26 @@ export class QuoteManager implements IQuoteManager {
     public ExecuteTrade(symbol: TradingSymbol, volumeRequested: UInt): ITradeResult {
         let volumePrices: Array<{ volume: UInt, price: Double }> = [];
         let volumeRequestedRemaining = volumeRequested;
-        const quotes = this.cache.getQuotesBySymbol(symbol);
-        // I dislike for loops with index iteration, but we can't afford large array copy's using .slice()
-        for (let ix = 0; ix < quotes.length; ix++) {
+        const quotes = this.cache.getAllQuotesBySymbol(symbol);
+        for (const quote of iteratorReverse(quotes)) {
             if (volumeRequestedRemaining <= 0) {
                 if (volumeRequestedRemaining < 0) {
                     throw new Error('whoops');
                 }
                 break;
             }
-            const quote = quotes[ix];
             if (!quote) {
                 throw new Error('whoops');
             }
-            if (quote.AvailableVolume <= 0) {
-                if (quote.AvailableVolume < 0) {
-                    throw new Error('whoops');
-                }
+            if (QuoteUtil.isQuoteInvalid(quote)) {
                 this.cache.removeQuote(quote);
-                ix--;
-                continue;
-            }
-            if (QuoteUtil.isQuoteExpired(quote)) {
                 continue;
             }
             const maxConsumableVolume = uint(quote.AvailableVolume < volumeRequestedRemaining ? quote.AvailableVolume : volumeRequestedRemaining);
             volumeRequestedRemaining = uint(volumeRequestedRemaining - maxConsumableVolume);
             quote.AvailableVolume = uint(quote.AvailableVolume - maxConsumableVolume);
-            if (quote.AvailableVolume <= 0) {
-                if (quote.AvailableVolume < 0) {
-                    throw new Error('whoops');
-                }
+            if (QuoteUtil.isQuoteInvalid(quote)) {
                 this.cache.removeQuote(quote);
-                ix--;
             }
             volumePrices.push({ volume: maxConsumableVolume, price: quote.Price });
         }

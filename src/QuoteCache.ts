@@ -3,6 +3,7 @@ import type {
     IQuote,
     TradingSymbol,
 } from 'src/base';
+import { entriesReverse } from 'src/util';
 
 type SymbolPosObj = { symbol: TradingSymbol, pos: number };
 
@@ -24,19 +25,19 @@ export class QuoteCache {
         let quotesForSymbol = this.getOrInitializeQuoteArr(quote.Symbol);
 
         if (!symbolPosObj) {
-            let newIndex = 0;
-            // sort by price lowest to highest
-            for (const [index, existingQuote] of quotesForSymbol.entries()) {
-                // using > maintains FIFO
+            let newIndex = quotesForSymbol.length;
+            // sort by price highest to lowest
+            for (const [index, existingQuote] of entriesReverse(quotesForSymbol)) {
+                // using > maintains FIFO on the "stack" sorted by price
                 if (existingQuote.Price > quote.Price) {
                     break;
                 }
-                newIndex = index + 1;
+                newIndex = index;
             }
             // shift all existing index markers after newIndex by one
-            for (const [index, existingQuote] of quotesForSymbol.entries()) {
+            for (const [index, existingQuote] of entriesReverse(quotesForSymbol)) {
                 if (index < newIndex) {
-                    continue;
+                    break;
                 }
                 const existingQuoteSymbolPosObj = this.quoteSymbolPosMap.get(existingQuote.Id)
                 if (!existingQuoteSymbolPosObj) {
@@ -72,7 +73,7 @@ export class QuoteCache {
         this.quotesBySymbol.delete(symbol);
     }
 
-    public removeQuote(quote: IQuote): void {
+    private removeQuoteAndReIndexCache(quote: IQuote): void {
         const symbolPosObj = this.quoteSymbolPosMap.get(quote.Id);
         if (!symbolPosObj) {
             return;
@@ -82,9 +83,10 @@ export class QuoteCache {
             return;
         }
         quotes.splice(symbolPosObj.pos, 1);
-        for (const [index, quote] of quotes.entries()) {
+        // in the event we arent removing a quote that is considered the "best price" we might as well still iterate from lowest to highest price
+        for (const [index, quote] of entriesReverse(quotes)) {
             if (index < symbolPosObj.pos) {
-                continue;
+                break;
             }
 
             {
@@ -95,6 +97,26 @@ export class QuoteCache {
                 symbolPosObj.pos = index;
             }
         }
+    }
+
+    public removeQuote(quote: IQuote): void {
+        const symbolPosObj = this.quoteSymbolPosMap.get(quote.Id);
+        if (!symbolPosObj) {
+            return;
+        }
+        const quotes = this.quotesBySymbol.get(quote.Symbol);
+        if (!quotes) {
+            return;
+        }
+        // without directly benchmarking the performance from .splice(array.length - 1, 1) vs .pop()
+        // we will assume this gives us a small but exponential performance gain
+        // by splitting these paths into just popping off the end versus splicing and reindexing the array
+        if (quotes.length - 1 === symbolPosObj.pos) {
+            quotes.pop();
+        } else {
+            this.removeQuoteAndReIndexCache(quote);
+        }
+        this.quoteSymbolPosMap.delete(quote.Id);
         // cleanup
         if (!quotes.length) {
             this.quotesBySymbol.delete(quote.Symbol);
@@ -114,11 +136,11 @@ export class QuoteCache {
         this.removeQuote(quote);
     }
 
-    public getQuotes(): IQuote[] {
+    public getAllQuotes(): IQuote[] {
         return Array.from(this.quotesBySymbol.values()).flat();
     }
 
-    public getQuotesBySymbol(symbol: TradingSymbol): IQuote[] {
+    public getAllQuotesBySymbol(symbol: TradingSymbol): IQuote[] {
         return this.quotesBySymbol.get(symbol) ?? [];
     }
 }
